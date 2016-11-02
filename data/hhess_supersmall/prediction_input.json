@@ -1,0 +1,25 @@
+{
+
+    "predictionInput" : {
+        "hhess" : {
+            "data":{
+                "raw" : {
+                    "file" : [
+                        "/home/tbeier/src/neurocontext/data/hhess_supersmall/raw.h5",
+                        "data"
+                    ]
+                }
+            },
+            "prediction" :{
+                "file" : [
+                    "/home/tbeier/src/neurocontext/data/hhess_supersmall/raw_predictions.h5",
+                    "data"
+                ]
+            }
+        }   
+    }
+    ,
+    "setup" : {   
+        "blockShape" : [64,64,64]
+    }
+}
