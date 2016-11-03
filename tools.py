@@ -4,6 +4,43 @@ from __future__ import division
 import functools
 import traceback
 import numpy
+from concurrent.futures import ThreadPoolExecutor
+
+
+
+def forEachBlock(shape, blockShape, f, nWorker):
+
+    futures = []
+    with ThreadPoolExecutor(max_workers=nWorker) as executer:
+        for blockBegin, blockEnd in blockYielder((0,0,0), shape, blockShape):
+            if nWorker == 1:
+                f(blockBegin=blockBegin, blockEnd=blockEnd)
+            else:
+                future = executer.submit(f, blockBegin=blockBegin, blockEnd=blockEnd)
+                futures.append(future)
+
+
+
+    for future in futures:
+        e = future.exception()
+        if e is not None:
+            raise e
+
+
+
+
+
+
+
+
+
+def getShape(dataH5Dsets, labelsH5Dset):
+    shape = tuple(labelsH5Dset.shape[0:3])
+    for inputFileName in dataH5Dsets.keys():
+        fshape = tuple(dataH5Dsets[inputFileName].shape[0:3])
+        assert shape == fshape
+    return shape
+
 
 def reraise_with_stack(func):
 

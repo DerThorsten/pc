@@ -6,8 +6,8 @@
             "data":{
                 "raw" : {
                     "file" : [
-                        "/home/tbeier/src/neurocontext/data/hhess_supersmall/raw.h5",
-                        "data"
+                        "/home/tbeier/src/pc/data/hhess_supersmall/raw.h5",
+                        "dataa"
                     ]
                 }
             }
@@ -15,7 +15,7 @@
             "labels" : {
 
                 "file" : [
-                    "/home/tbeier/src/neurocontext/data/hhess_supersmall/explicit_semantic_labels.h5",
+                    "/home/tbeier/src/pc/data/hhess_supersmall/explicit_semantic_labels.h5",
                     "data"
                 ]
             }
@@ -29,19 +29,21 @@
         "trainingDataNames": [
             "hhess"
         ],
-        "inputFile" : [
+        "featureSettings" : [
             {
-                "isRawData" : true,
-                "name": "raw"
+                // all features computes on raw data
+                "name": "raw",
+                "features" :[
+                ]
             }
         ] 
         ,
         "classifier" :{
-            "filename":"/home/tbeier/src/neurocontext/data/hhess_supersmall/clf.clf",
+            "filename":"/home/tbeier/src/pc/data/hhess_supersmall/clf.clf",
 
             "type" : "xgb",
             "settings" : {
-                "nRounds":50, 
+                "nRounds":10, 
                 "maxDepth":3
             }
         }

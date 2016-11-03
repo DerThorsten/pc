@@ -24,76 +24,86 @@ import threading
 import multiprocessing
 
 
+class Settings(object):
+    def __init__(self, settingsDict, predictionSettingsDict=None):
+
+        self.settingsDict  = settingsDict
+        self.featureBlockShape =  tuple(self.settingsDict["setup"]["blockShape"])
+        self.numberOfClasses = self.settingsDict["setup"]["nClasses"]
+
+    def trainingInstancesNames(self):
+        setup = self.settingsDict["setup"]
+        return setup['trainingDataNames']
+
+    def trainignInstancesDataDicts(self):
+        setup = self.settingsDict["setup"]
+        trainingDataNames = setup['trainingDataNames']
+        trainingInstancesSettings = [ ]
+
+        for trainingDataName in trainingDataNames:
+            s = self.settingsDict["trainingData"][trainingDataName]
+            s['name'] = trainingDataName
+            trainingInstancesSettings.append(s)
+        return trainingInstancesSettings
+
+    def featureSetttingsList(self):
+        return self.settingsDict["setup"]["featureSettings"]
+
+
+    def getLabelsH5Path(self, instanceName):
+        trainingInstanceDataDict = self.settingsDict["trainingData"][instanceName]
+        f,d = trainingInstanceDataDict['labels']
+        return f,d
+
+    def getDataH5Dsets(self, instanceDataDict, openH5Files):
+
+        dataH5Dsets = OrderedDict()
+        for featureSettings in self.featureSetttingsList():
+            inputFileName = featureSettings['name']
+            print("    ","inputFile:",inputFileName)
+        
+            # get the h5filename 
+            f,d = instanceDataDict['data'][inputFileName]['file']
+
+            h5File = h5py.File(f,'r')
+            dset = h5File[d]
+
+
+
+            # dsets
+            dataH5Dsets[inputFileName] = dset
+
+            # remeber all files opend
+            openH5Files.append(h5File)
+
+        return dataH5Dsets, openH5Files
+
+
 def train(settings):
     
-    setup = settings["setup"]
-
-    trainingDataNames = setup['trainingDataNames']
-    
-    # get all the training data settings
-    trainingInstancesSettings = [ ]
-    for trainingDataName in trainingDataNames:
-        s = settings["trainingData"][trainingDataName]
-        s['name'] = trainingDataName
-        trainingInstancesSettings.append(s)
-
-
-    trainImpl(setup=setup, trainingInstancesSettings=trainingInstancesSettings)
-
-
-
-
-
-
-
-def trainImpl(setup, trainingInstancesSettings):
 
 
 
     featuresList = []
     labelsList = []
 
-    for trainingInstanceSettings in trainingInstancesSettings:
+    for trainingInstanceDataDict in settings.trainignInstancesDataDicts():
 
-        trainingInstanceName = trainingInstanceSettings['name']
-
-        print("  ","trainingInstance:", trainingInstanceName)
-
-
-        inputFilesSettings = setup["inputFile"]
 
         # remember opend h5Files
-        h5Files = []
+        openH5Files = []
         
-
-
-        f, d = trainingInstanceSettings['labels']['file']
+        # get the labels
+        f, d = trainingInstanceDataDict['labels']['file']
         labelsDset = h5py.File(f)[d]
+        openH5Files.append(f)
 
-        h5Files.append(f)
-
-        # combine all the input files h5 files
-        # (like raw data, or predictions from prev.rounds)
-        dataH5Dsets = OrderedDict()
-        for inputFileSettings in inputFilesSettings:
-            inputFileName = inputFileSettings['name']
-            print("    ","inputFile:",inputFileName)
-        
-            # get the h5filename 
-            f,d = trainingInstanceSettings['data'][inputFileName]['file']
-
-            h5File = h5py.File(f,'r')
-            dset = h5File[d]
-
-            # dsets
-            dataH5Dsets[inputFileName] = dset
-
-            # remeber all files opend
-            h5Files.append(h5File)
+        # open all dsets where we need to compute feature on
+        dataH5Dsets , openH5Files = settings.getDataH5Dsets(trainingInstanceDataDict, openH5Files)
 
 
         # extract the features and the labels
-        f, l = extractTrainingData(setup=setup, dataH5Dsets=dataH5Dsets,
+        f, l = extractTrainingData(settings=settings, dataH5Dsets=dataH5Dsets,
                                    labelsH5Dset=labelsDset)
         featuresList.append(f)
         labelsList.append(l)
@@ -110,16 +120,14 @@ def trainImpl(setup, trainingInstancesSettings):
 
     trainClassifier(setup, features, labels)
 
-def extractTrainingData(setup, dataH5Dsets, labelsH5Dset):
 
-    # check shapes
-    shape = tuple(labelsH5Dset.shape[0:3])
-    for inputFileName in dataH5Dsets.keys():
-        fshape = tuple(dataH5Dsets[inputFileName].shape[0:3])
-        assert shape == fshape
 
-    blockShape = tuple(setup['blockShape'])
 
+
+def extractTrainingData(settings, dataH5Dsets, labelsH5Dset):
+
+    # check and get shapes
+    shape = getShape(dataH5Dsets, labelsH5Dset)
 
 
     featuresList = []
@@ -130,45 +138,35 @@ def extractTrainingData(setup, dataH5Dsets, labelsH5Dset):
     nWorker = multiprocessing.cpu_count()
     #nWorker = 1
 
-
     rawFeatureExtractor = RawFeatureExtractor()
     rawFeatureExtractor.shape = shape
 
-    with ThreadPoolExecutor(max_workers=nWorker) as executer:
-        for blockBegin, blockEnd in blockYielder((0,0,0), shape, blockShape):
-            
-            
-            @reraise_with_stack
-            def f(blockBegin, blockEnd):
-                #print(blockBegin,blockEnd)
-                
-                labels = loadLabelsBlock(labelsH5Dset, blockBegin, blockEnd)
-                if labels.any():
-                    #   print("hasLabels")
-
-                    labels,blockBegin,blockEnd,whereLabels = labelsBoundingBox(labels,blockBegin, blockEnd)
-                    features = []
-                    for dsNames in dataH5Dsets.keys():
-                        features.append(rawFeatureExtractor(dataH5Dsets[dsNames], blockBegin, blockEnd, whereLabels))
-
-                    features = numpy.concatenate(features,axis=1)
-                    labels = labels[whereLabels[0,:],whereLabels[1,:],whereLabels[2,:]]
-                    with lock:
-                        print("appending features:",features.shape)
-                        featuresList.append(features)
-                        labelsList.append(labels)
-
-            if nWorker == 1:
-                f(blockBegin, blockEnd)
-            else:
-                future = executer.submit(f, blockBegin, blockEnd)
-                futures.append(future)
 
 
-    for future in futures:
-        e = future.exception()
-        if e is not None:
-            raise e
+    @reraise_with_stack
+    def f(blockBegin, blockEnd):
+        labels = loadLabelsBlock(labelsH5Dset, blockBegin, blockEnd)
+
+        if labels.any():
+            labels,blockBegin,blockEnd,whereLabels = labelsBoundingBox(labels,blockBegin, blockEnd)
+
+
+            features = []
+            for dsNames in dataH5Dsets.keys():
+                features.append(rawFeatureExtractor(dataH5Dsets[dsNames], blockBegin, blockEnd, whereLabels))
+
+
+
+            features = numpy.concatenate(features,axis=1)
+            labels = labels[whereLabels[0,:],whereLabels[1,:],whereLabels[2,:]]
+            with lock:
+                print("appending features:",features.shape)
+                featuresList.append(features)
+                labelsList.append(labels)
+
+    forEachBlock(shape=shape, blockShape=settings.featureBlockShape,f=f, nWorker=nWorker)
+
+
 
 
 
@@ -178,8 +176,6 @@ def extractTrainingData(setup, dataH5Dsets, labelsH5Dset):
     print(numpy.bincount(labels))
 
     return features,labels
-
-
 
 def trainClassifier(setup, features, labels):
 
@@ -349,21 +345,21 @@ if __name__ == '__main__':
     
 
     # normaly we use arguments
-    settingsFile = "/home/tbeier/src/neurocontext/data/hhess_supersmall/settings.json"
+    settingsFile = "/home/tbeier/src/pc/data/hhess_supersmall/settings.json"
 
     
     # read settings file
     with open(settingsFile) as jsonFile:
         jsonStr = jsonFile.read()
-        settings = json.loads(jsonStr)
+        settingsDict = json.loads(jsonStr)
 
 
     if True:
-
+        settings = Settings(settingsDict)
         train(settings=settings)
 
-    if True:
-        predictionSettingsFile = "/home/tbeier/src/neurocontext/data/hhess_supersmall/prediction_input.json"   
+    if False:
+        predictionSettingsFile = "/home/tbeier/src/pc/data/hhess_supersmall/prediction_input.json"   
 
         # read settings file
         with open(predictionSettingsFile) as jsonFile:
