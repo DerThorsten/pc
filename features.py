@@ -1,42 +1,14 @@
 import fastfilters
 import numpy
 import math
-def addHalo(shape, blockBegin, blockEnd, halo):
 
-    withHaloBlockBegin = (
-        max(blockBegin[0] - halo[0],0)   , 
-        max(blockBegin[1] - halo[1],0)   ,
-        max(blockBegin[2] - halo[2],0)
-    )
+from tools import addHalo
 
-    withHaloBlockEnd = (
-        min(blockEnd[0] + halo[0],shape[0])   , 
-        min(blockEnd[1] + halo[1],shape[1])   ,
-        min(blockEnd[2] + halo[2],shape[2])
-    )
-
-
-    inBlockBegin = (
-        blockBegin[0] -  withHaloBlockBegin[0],
-        blockBegin[1] -  withHaloBlockBegin[1],
-        blockBegin[2] -  withHaloBlockBegin[2]
-    )
-
-    inBlockEnd = (
-        inBlockBegin[0] +  (blockEnd[0] - blockBegin[0]),
-        inBlockBegin[1] +  (blockEnd[1] - blockBegin[1]),
-        inBlockBegin[2] +  (blockEnd[2] - blockBegin[2])
-    )
-
-    return  withHaloBlockBegin, withHaloBlockEnd, inBlockBegin, inBlockEnd
 
 
 
 def getScale(target, presmoothed):
     return math.sqrt(target**2 - presmoothed**2)
-
-
-
 
 
 class FeatureExtractorBase(object):
@@ -46,11 +18,17 @@ class FeatureExtractorBase(object):
 
 
 
-class RawFeatureExtractor(FeatureExtractorBase):
+class RawFeatureExtractorOld(FeatureExtractorBase):
 
-    def __init__(self):
+    def __init__(self, sigmas=(1.0, 2.0, 4.0, 8.0)):
         self.shape = None
-        self.__halo = (50,50,50)
+        assert isSorted(sigmas)
+        self.sigmas  = sigmas
+        maxSigma = max(sigmas)
+        maxOrder = 2
+        r = int(round(3.0*maxSigma + 0.5*maxOrder))
+
+        self.__halo = (r,)*3
 
     def halo(self):
         return self.__halo
@@ -110,6 +88,57 @@ class RawFeatureExtractor(FeatureExtractorBase):
                 lBegin[2]:lEnd[2],
                 :
             ]
+
+
+
+
+
+
+
+class ConvolutionFeatures(FeatureExtractorBase):
+
+    def __init__(self, sigmas=(1.0, 2.0, 4.0, 8.0)):
+        self.shape = None
+        assert sorted(sigmas) == sigmas
+        self.sigmas  = sigmas
+        maxSigma = max(sigmas)
+        maxOrder = 2
+        r = int(round(3.0*maxSigma + 0.5*maxOrder))
+
+        self.__halo = (r,)*3
+
+    def halo(self):
+        return self.__halo
+
+    def __call__(self, data):
+        
+
+        print("datashape",data.shape)
+
+
+        allFeat = []
+   
+
+        # pre-smoothed
+        sigmaPre = self.sigmas[0]/2.0
+        preS = fastfilters.gaussianSmoothing(data, sigmaPre)
+
+        for sigma in self.sigmas:
+
+            neededScale = getScale(target=sigma, presmoothed=sigmaPre)
+
+            preS = fastfilters.gaussianSmoothing(preS, neededScale)
+            sigmaPre = sigma
+
+            allFeat.append(preS[:,:,:,None])
+            allFeat.append(fastfilters.laplacianOfGaussian(data, neededScale)[:,:,:,None])
+            allFeat.append(fastfilters.gaussianGradientMagnitude(data, neededScale)[:,:,:,None])
+            allFeat.append(fastfilters.gaussianGradientMagnitude(data, neededScale)[:,:,:,None])
+            allFeat.append(fastfilters.hessianOfGaussianEigenvalues(data, neededScale)[:,:,:,:])
+            allFeat.append(fastfilters.structureTensorEigenvalues(data, neededScale, sigma*2.0)[:,:,:,:])
+        
+        
+        return numpy.concatenate(allFeat,axis=3)
 
 
 class BinaryMorphologyFeatures(FeatureExtractorBase):
@@ -180,6 +209,12 @@ class BinaryMorphologyFeatures(FeatureExtractorBase):
         
         return numpy.concatenate(allFeat, axis=3)
 
+
+# registered features
+registerdFeatureOperators = {
+    "ConvolutionFeatures" : ConvolutionFeatures,
+    "BinaryMorphologyFeatures" : BinaryMorphologyFeatures
+}
 
 
 

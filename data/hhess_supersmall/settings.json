@@ -7,7 +7,7 @@
                 "raw" : {
                     "file" : [
                         "/home/tbeier/src/pc/data/hhess_supersmall/raw.h5",
-                        "dataa"
+                        "data"
                     ]
                 }
             }
@@ -31,9 +31,14 @@
         ],
         "featureSettings" : [
             {
-                // all features computes on raw data
-                "name": "raw",
+                "name" : "raw",
                 "features" :[
+                    {
+                        "type" : "ConvolutionFeatures",
+                        "kwargs" : {
+                            "sigmas" : [1.0, 2.0, 3.0]
+                        }
+                    }
                 ]
             }
         ] 

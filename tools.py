@@ -8,6 +8,37 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 
+def addHalo(shape, blockBegin, blockEnd, halo):
+
+    withHaloBlockBegin = (
+        max(blockBegin[0] - halo[0],0)   , 
+        max(blockBegin[1] - halo[1],0)   ,
+        max(blockBegin[2] - halo[2],0)
+    )
+
+    withHaloBlockEnd = (
+        min(blockEnd[0] + halo[0],shape[0])   , 
+        min(blockEnd[1] + halo[1],shape[1])   ,
+        min(blockEnd[2] + halo[2],shape[2])
+    )
+
+
+    inBlockBegin = (
+        blockBegin[0] -  withHaloBlockBegin[0],
+        blockBegin[1] -  withHaloBlockBegin[1],
+        blockBegin[2] -  withHaloBlockBegin[2]
+    )
+
+    inBlockEnd = (
+        inBlockBegin[0] +  (blockEnd[0] - blockBegin[0]),
+        inBlockBegin[1] +  (blockEnd[1] - blockBegin[1]),
+        inBlockBegin[2] +  (blockEnd[2] - blockBegin[2])
+    )
+
+    return  withHaloBlockBegin, withHaloBlockEnd, inBlockBegin, inBlockEnd
+
+
+
 def forEachBlock(shape, blockShape, f, nWorker):
 
     futures = []

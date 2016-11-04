@@ -79,6 +79,49 @@ class Settings(object):
         return dataH5Dsets, openH5Files
 
 
+
+    def getFeatureOperators(self):
+
+        dataH5Dsets = OrderedDict()
+        
+        outerList = []
+        maxHaloList = []
+
+        for featureSettings in self.featureSetttingsList():
+
+            inputFileName = featureSettings['name']
+
+            print("features for",inputFileName)
+            
+            featureOperatorsSettingsList = featureSettings["features"]
+
+            innerList = []
+
+            maxHalo = (0,0,0)
+
+            for featureOperatorSettings in featureOperatorsSettingsList:
+                print(featureOperatorSettings)
+                
+                fOpName = featureOperatorSettings['type']
+                fOpKwargs = featureOperatorSettings['kwargs']
+                fOpCls = registerdFeatureOperators[fOpName]
+                fOp = fOpCls(**fOpKwargs)
+
+                halo = fOp.halo()
+
+                
+                maxHalo = map(lambda aa,bb: max(aa,bb), halo, maxHalo)
+
+                innerList.append(fOp)
+
+        maxHaloList.append(maxHalo)
+        outerList.append(innerList)
+
+        return outerList,maxHaloList
+
+
+
+
 def train(settings):
     
 
@@ -109,7 +152,7 @@ def train(settings):
         labelsList.append(l)
 
 
-        closeAllH5Files(h5Files)
+        closeAllH5Files(openH5Files)
 
     features = numpy.concatenate(featuresList,axis=0)
     labels = numpy.concatenate(labelsList,  axis=0)
@@ -138,9 +181,12 @@ def extractTrainingData(settings, dataH5Dsets, labelsH5Dset):
     nWorker = multiprocessing.cpu_count()
     #nWorker = 1
 
-    rawFeatureExtractor = RawFeatureExtractor()
-    rawFeatureExtractor.shape = shape
 
+
+
+
+    outerFeatureOperatorList, maxHaloList = settings.getFeatureOperators()
+  
 
 
     @reraise_with_stack
@@ -151,10 +197,24 @@ def extractTrainingData(settings, dataH5Dsets, labelsH5Dset):
             labels,blockBegin,blockEnd,whereLabels = labelsBoundingBox(labels,blockBegin, blockEnd)
 
 
-            features = []
-            for dsNames in dataH5Dsets.keys():
-                features.append(rawFeatureExtractor(dataH5Dsets[dsNames], blockBegin, blockEnd, whereLabels))
 
+            features = []
+
+            for featureOperatorList, maxHalo, dataName in zip(outerFeatureOperatorList, maxHaloList,  dataH5Dsets.keys()):
+                
+                # the dataset
+                dset = dataH5Dsets[dataName]
+
+                # add halo to block begin and end
+                gBegin, gEnd ,lBegin, lEnd = addHalo(shape, blockBegin, blockEnd, maxHalo)  
+
+                # we load the data with the maximum margin
+                data = loadData(dset, gBegin, gEnd).squeeze()
+
+                # compute the features
+                for featureOp in featureOperatorList:
+                    feat = featureOp(data)[whereLabels[0,:] + lBegin[0], whereLabels[1,:] + lBegin[1], whereLabels[2,:] + lBegin[2], :]
+                    features.append(feat)
 
 
             features = numpy.concatenate(features,axis=1)

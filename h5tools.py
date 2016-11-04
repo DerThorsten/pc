@@ -12,3 +12,17 @@ def closeAllH5Files(h5Files):
 
 def loadLabelsBlock(h5Dset, begin, end):
     return h5Dset[begin[0]:end[0], begin[1]:end[1], begin[2]:end[2], 0]
+
+
+
+
+
+def loadData(h5Dset, begin, end):
+    if h5Dset.ndim == 3:
+        return h5Dset[begin[0]:end[0], begin[1]:end[1], begin[2]:end[2]]
+
+    elif h5Dset.ndim == 4:
+        return h5Dset[begin[0]:end[0], begin[1]:end[1], begin[2]:end[2],:]
+
+    else:
+        return RuntimeError("wrong number of dimension")
