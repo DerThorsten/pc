@@ -6,6 +6,7 @@ from __future__ import division
 from h5tools import *
 from tools import *
 from features import *
+from settings import *
 from classifier import *
 
 import os
@@ -23,101 +24,6 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 import multiprocessing
 
-
-class Settings(object):
-    def __init__(self, settingsDict, predictionSettingsDict=None):
-
-        self.settingsDict  = settingsDict
-        self.featureBlockShape =  tuple(self.settingsDict["setup"]["blockShape"])
-        self.numberOfClasses = self.settingsDict["setup"]["nClasses"]
-
-    def trainingInstancesNames(self):
-        setup = self.settingsDict["setup"]
-        return setup['trainingDataNames']
-
-    def trainignInstancesDataDicts(self):
-        setup = self.settingsDict["setup"]
-        trainingDataNames = setup['trainingDataNames']
-        trainingInstancesSettings = [ ]
-
-        for trainingDataName in trainingDataNames:
-            s = self.settingsDict["trainingData"][trainingDataName]
-            s['name'] = trainingDataName
-            trainingInstancesSettings.append(s)
-        return trainingInstancesSettings
-
-    def featureSetttingsList(self):
-        return self.settingsDict["setup"]["featureSettings"]
-
-
-    def getLabelsH5Path(self, instanceName):
-        trainingInstanceDataDict = self.settingsDict["trainingData"][instanceName]
-        f,d = trainingInstanceDataDict['labels']
-        return f,d
-
-    def getDataH5Dsets(self, instanceDataDict, openH5Files):
-
-        dataH5Dsets = OrderedDict()
-        for featureSettings in self.featureSetttingsList():
-            inputFileName = featureSettings['name']
-            print("    ","inputFile:",inputFileName)
-        
-            # get the h5filename 
-            f,d = instanceDataDict['data'][inputFileName]['file']
-
-            h5File = h5py.File(f,'r')
-            dset = h5File[d]
-
-
-
-            # dsets
-            dataH5Dsets[inputFileName] = dset
-
-            # remeber all files opend
-            openH5Files.append(h5File)
-
-        return dataH5Dsets, openH5Files
-
-
-
-    def getFeatureOperators(self):
-
-        dataH5Dsets = OrderedDict()
-        
-        outerList = []
-        maxHaloList = []
-
-        for featureSettings in self.featureSetttingsList():
-
-            inputFileName = featureSettings['name']
-
-            print("features for",inputFileName)
-            
-            featureOperatorsSettingsList = featureSettings["features"]
-
-            innerList = []
-
-            maxHalo = (0,0,0)
-
-            for featureOperatorSettings in featureOperatorsSettingsList:
-                print(featureOperatorSettings)
-                
-                fOpName = featureOperatorSettings['type']
-                fOpKwargs = featureOperatorSettings['kwargs']
-                fOpCls = registerdFeatureOperators[fOpName]
-                fOp = fOpCls(**fOpKwargs)
-
-                halo = fOp.halo()
-
-                
-                maxHalo = map(lambda aa,bb: max(aa,bb), halo, maxHalo)
-
-                innerList.append(fOp)
-
-        maxHaloList.append(maxHalo)
-        outerList.append(innerList)
-
-        return outerList,maxHaloList
 
 
 
@@ -161,7 +67,7 @@ def train(settings):
     assert labels.min() == 1
     labels -=1
 
-    trainClassifier(setup, features, labels)
+    trainClassifier(settings, features, labels)
 
 
 
@@ -177,16 +83,24 @@ def extractTrainingData(settings, dataH5Dsets, labelsH5Dset):
     labelsList = []
     lock = threading.Lock()
 
-    futures = []
-    nWorker = multiprocessing.cpu_count()
-    #nWorker = 1
 
 
 
 
 
     outerFeatureOperatorList, maxHaloList = settings.getFeatureOperators()
-  
+    
+    #print("\n\n\n")
+    #print("keys",dataH5Dsets.keys())
+    #print(maxHaloList)
+    ##print(outerFeatureOperatorList[1])
+    #sys.exit()
+
+    lockDict = {
+    }
+
+    for key in dataH5Dsets.keys():
+        lockDict[key] = threading.Lock()
 
 
     @reraise_with_stack
@@ -202,21 +116,27 @@ def extractTrainingData(settings, dataH5Dsets, labelsH5Dset):
 
             for featureOperatorList, maxHalo, dataName in zip(outerFeatureOperatorList, maxHaloList,  dataH5Dsets.keys()):
                 
+                #print("dataName",dataName,featureOperatorList)
+
                 # the dataset
                 dset = dataH5Dsets[dataName]
 
                 # add halo to block begin and end
                 gBegin, gEnd ,lBegin, lEnd = addHalo(shape, blockBegin, blockEnd, maxHalo)  
 
-                # we load the data with the maximum margin
-                data = loadData(dset, gBegin, gEnd).squeeze()
+                with lockDict[dataName]:
+                    # we load the data with the maximum margin
+                    data = loadData(dset, gBegin, gEnd).squeeze()
 
                 # compute the features
                 for featureOp in featureOperatorList:
                     feat = featureOp(data)[whereLabels[0,:] + lBegin[0], whereLabels[1,:] + lBegin[1], whereLabels[2,:] + lBegin[2], :]
+                    #with lock:
+                    #    print("subfeat ",feat.shape)
                     features.append(feat)
 
-
+            #with lock:
+            #    print("flist ",len(features))        
             features = numpy.concatenate(features,axis=1)
             labels = labels[whereLabels[0,:],whereLabels[1,:],whereLabels[2,:]]
             with lock:
@@ -224,6 +144,9 @@ def extractTrainingData(settings, dataH5Dsets, labelsH5Dset):
                 featuresList.append(features)
                 labelsList.append(labels)
 
+
+    nWorker = multiprocessing.cpu_count()
+    #nWorker = 1
     forEachBlock(shape=shape, blockShape=settings.featureBlockShape,f=f, nWorker=nWorker)
 
 
@@ -237,7 +160,9 @@ def extractTrainingData(settings, dataH5Dsets, labelsH5Dset):
 
     return features,labels
 
-def trainClassifier(setup, features, labels):
+def trainClassifier(settings, features, labels):
+
+    setup = settings.settingsDict['setup']
 
     nClasses = labels.max() + 1
 
@@ -255,13 +180,13 @@ def trainClassifier(setup, features, labels):
         raise RuntimeError(" %s is a non supported classifer" %clfType)
 
 
-def loadClassifer(settings, predictionSettings):
+def loadClassifer(settings):
 
-    clfSetup = settings['setup']["classifier"]
+    clfSetup = settings.settingsDict['setup']["classifier"]
     clfType = clfSetup["type"]
     clfSettings = clfSetup["settings"]
     if clfType == "xgb":
-        clf = Classifier(nClasses=settings['setup']['nClasses'],**clfSettings)
+        clf = Classifier(nClasses=settings.numberOfClasses,**clfSettings)
         clf.load(clfSetup["filename"])#, nThreads=None)
         return clf
     else:
@@ -269,130 +194,124 @@ def loadClassifer(settings, predictionSettings):
 
 
     
-def predict(settings, predictionSettings):
+def predict(settings):
 
-    setup = settings["setup"]
-    predictionInput = predictionSettings["predictionInput"]
 
 
     # load classifier
-    clf = loadClassifer(settings, predictionSettings)
+    clf = loadClassifer(settings)
+    nClasses = settings.numberOfClasses
+    
 
 
-    nClasses = setup['nClasses']
 
 
-
-    for dataName in predictionInput.keys(): 
+    for predictionInstanceDataDict in settings.predictionInstancesDataDicts(): 
         
 
-
-        inputFilesSettings = setup["inputFile"]
+        print("pred data dict",predictionInstanceDataDict)
 
         # remember opend h5Files
-        h5Files = []
-        
-        shape = None
+        openH5Files = []
 
-        # combine all the input files h5 files
-        # (like raw data, or predictions from prev.rounds)
-        dataH5Dsets = OrderedDict()
-        for inputFileSettings in inputFilesSettings:
-            inputFileName = inputFileSettings['name']
-            print("    ","inputFile:",inputFileName)
-        
-            # get the h5filename 
-            f,d = predictionInput[dataName]['data'][inputFileName]['file']
+        # open all dsets where we need to compute feature on
+        dataH5Dsets , openH5Files = settings.getDataH5Dsets(predictionInstanceDataDict, openH5Files)
 
-            h5File = h5py.File(f,'r')
-            dset = h5File[d]
-
-            if shape is None:
-                shape = tuple(dset.shape[0:3])
-            else:
-                assert shape == tuple(dset.shape[0:3])
-
-            # dsets
-            dataH5Dsets[inputFileName] = dset
+        # get and check shape
+        shape = getShape(dataH5Dsets)
 
 
         # allocate output file
-        f, d = predictionInput[dataName]['prediction']['file']
+        f, d = predictionInstanceDataDict['prediction']['file']
 
         if os.path.exists(f):
             os.remove(f)
 
         f = h5py.File(f)
-        h5Files.append(f)
+        openH5Files.append(f)
         pshape = shape + (nClasses,)
-        predictionDset = f.create_dataset(d,shape=pshape, chunks=(100,100,100,1), dtype='float32')
+
+        predictionDtype = predictionInstanceDataDict['prediction']['dtype']
+
+        predictionDset = f.create_dataset(d,shape=pshape, chunks=(100,100,100,settings.numberOfClasses), dtype=predictionDtype)
+
+
+
+
+
+        
+
+ 
+        outerFeatureOperatorList, maxHaloList = settings.getFeatureOperators()
+      
+
+        lock = threading.Lock()
+
+
+        lockDict = {
+        }
+
+        for key in dataH5Dsets.keys():
+            lockDict[key] = threading.Lock()
+        @reraise_with_stack
+        def f(blockBegin, blockEnd):
+            
+            blockShape = (
+                blockEnd[0] - blockBegin[0],
+                blockEnd[1] - blockBegin[1],
+                blockEnd[2] - blockBegin[2]
+            )
+      
+            features = []
+
+            for featureOperatorList, maxHalo, dataName in zip(outerFeatureOperatorList, maxHaloList,  dataH5Dsets.keys()):
+                
+                # the dataset
+                dset = dataH5Dsets[dataName]
+
+                # add halo to block begin and end
+                gBegin, gEnd ,lBegin, lEnd = addHalo(shape, blockBegin, blockEnd, maxHalo)  
+
+                # we load the data with the maximum margin
+                with lockDict[dataName]:
+                    data = loadData(dset, gBegin, gEnd).squeeze()
+
+                # compute the features
+                for featureOp in featureOperatorList:
+                    feat = featureOp(data)[lBegin[0]:lEnd[0],lBegin[1]:lEnd[1],lBegin[2]:lEnd[2],:]
+                    features.append(feat)
+
+            features = numpy.concatenate(features,axis=3)
+            nFeatures = features.shape[3]
+
+            featuresFlat = features.reshape([-1,nFeatures])
+
+            with lock:
+                # do the prediction
+                probsFlat = clf.predict(featuresFlat)
+                probs = probsFlat.reshape(tuple(blockShape)+(settings.numberOfClasses,))
+                print("mima",probs.min(),probs.max())
+                #print probs
+                # convert from float to matching dtype
+                if predictionDtype == 'uint8':
+                    probs *= 255.0
+                    probs = numpy.round(probs,0).astype('uint8')
+
+                predictionDset[blockBegin[0]:blockEnd[0],blockBegin[1]:blockEnd[1],blockBegin[2]:blockEnd[2],:] = probs[:,:,:,:]
 
 
         nWorker = multiprocessing.cpu_count()
         #nWorker = 1
-
-        rawFeatureExtractor = RawFeatureExtractor()
-        rawFeatureExtractor.shape = shape
-        blockShape = predictionSettings['setup']['blockShape']
-
-        futures = []
-
-        lock = threading.Lock()
-        with ThreadPoolExecutor(max_workers=nWorker) as executer:
-            for blockBegin, blockEnd in blockYielder((0,0,0), shape, blockShape):
-                
-                
-                assert blockEnd[0] <= shape[0]
-                assert blockEnd[1] <= shape[1]
-                assert blockEnd[2] <= shape[2]
-                @reraise_with_stack
-                def f(blockBegin, blockEnd):
-
-                    blockShape = tuple([e-b for e,b in zip(blockEnd, blockBegin)])
-
-                    features = []
-                    for dsNames in dataH5Dsets.keys():
-                        features.append(rawFeatureExtractor(dataH5Dsets[dsNames], blockBegin, blockEnd))
-
-                    features = numpy.concatenate(features,axis=3)
-
-                    nFeatures = features.shape[3]
-                    featuresFlat = features.reshape([-1,nFeatures])
-
-                    with lock:
-                        probs = clf.predict(featuresFlat)
-                        probs = probs.reshape(blockShape+(-1,))
-                        predictionDset[
-                            blockBegin[0]:blockEnd[0], 
-                            blockBegin[1]:blockEnd[1], 
-                            blockBegin[2]:blockEnd[2],
-                            :
-                        ] = probs
-                    #print(probs)
-
-                if nWorker == 1:
-                    f(blockBegin, blockEnd)
-                else:
-                    future = executer.submit(f, blockBegin, blockEnd)
-                    futures.append(future)
-
-
-        for future in futures:
-            e = future.exception()
-            if e is not None:
-                raise e
+        forEachBlock(shape=shape, blockShape=settings.featureBlockShape,f=f, nWorker=nWorker)
 
 
 
 
 
-            # remeber all files opend
-            h5Files.append(h5File)
 
 
 
-
-        closeAllH5Files(h5Files)
+        closeAllH5Files(openH5Files)
 
 
 
@@ -405,7 +324,7 @@ if __name__ == '__main__':
     
 
     # normaly we use arguments
-    settingsFile = "/home/tbeier/src/pc/data/hhess_supersmall/settings.json"
+    settingsFile = "/home/tbeier/src/pc/data/hhess_supersmall/settingsr2.json"
 
     
     # read settings file
@@ -413,17 +332,19 @@ if __name__ == '__main__':
         jsonStr = jsonFile.read()
         settingsDict = json.loads(jsonStr)
 
-
-    if True:
-        settings = Settings(settingsDict)
-        train(settings=settings)
+    settings = Settings(settingsDict)
 
     if False:
-        predictionSettingsFile = "/home/tbeier/src/pc/data/hhess_supersmall/prediction_input.json"   
+        
+        train(settings=settings)
+
+    if True:
+        predictionSettingsFile = "/home/tbeier/src/pc/data/hhess_supersmall/prediction_inputr2.json"   
 
         # read settings file
         with open(predictionSettingsFile) as jsonFile:
             jsonStr = jsonFile.read()
-            predictionSettings = json.loads(jsonStr)
+            predictionSettingsDict = json.loads(jsonStr)
 
-        predict(settings=settings, predictionSettings=predictionSettings)
+        settings = Settings(settingsDict, predictionSettingsDict)
+        predict(settings=settings)

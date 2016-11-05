@@ -65,11 +65,19 @@ def forEachBlock(shape, blockShape, f, nWorker):
 
 
 
-def getShape(dataH5Dsets, labelsH5Dset):
-    shape = tuple(labelsH5Dset.shape[0:3])
+def getShape(dataH5Dsets, labelsH5Dset=None):
+
+    shape = None
+    if labelsH5Dset is not None:
+        shape = tuple(labelsH5Dset.shape[0:3])
+
     for inputFileName in dataH5Dsets.keys():
         fshape = tuple(dataH5Dsets[inputFileName].shape[0:3])
-        assert shape == fshape
+        if shape is not None:
+            assert shape == fshape
+        else:
+            shape = fshape
+            
     return shape
 
 

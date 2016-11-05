@@ -1,7 +1,7 @@
 import fastfilters
 import numpy
 import math
-
+import vigra
 from tools import addHalo
 
 
@@ -103,55 +103,68 @@ class ConvolutionFeatures(FeatureExtractorBase):
         self.sigmas  = sigmas
         maxSigma = max(sigmas)
         maxOrder = 2
-        r = int(round(3.0*maxSigma + 0.5*maxOrder))
+        r = int(round(6.0*maxSigma*1.5 + 0.5*maxOrder))
 
         self.__halo = (r,)*3
 
     def halo(self):
         return self.__halo
 
-    def __call__(self, data):
+    def __call__(self, dataIn):
         
-
-        print("datashape",data.shape)
-
-
         allFeat = []
-   
+        dataIn = numpy.require(dataIn,'float32').squeeze()
 
-        # pre-smoothed
-        sigmaPre = self.sigmas[0]/2.0
-        preS = fastfilters.gaussianSmoothing(data, sigmaPre)
+        if dataIn.ndim == 3:
+            dataIn = dataIn[:,:,:,None]
 
-        for sigma in self.sigmas:
 
-            neededScale = getScale(target=sigma, presmoothed=sigmaPre)
 
-            preS = fastfilters.gaussianSmoothing(preS, neededScale)
-            sigmaPre = sigma
+        for c in range(dataIn.shape[3]):
 
-            allFeat.append(preS[:,:,:,None])
-            allFeat.append(fastfilters.laplacianOfGaussian(data, neededScale)[:,:,:,None])
-            allFeat.append(fastfilters.gaussianGradientMagnitude(data, neededScale)[:,:,:,None])
-            allFeat.append(fastfilters.gaussianGradientMagnitude(data, neededScale)[:,:,:,None])
-            allFeat.append(fastfilters.hessianOfGaussianEigenvalues(data, neededScale)[:,:,:,:])
-            allFeat.append(fastfilters.structureTensorEigenvalues(data, neededScale, sigma*2.0)[:,:,:,:])
-        
-        
-        return numpy.concatenate(allFeat,axis=3)
+            data = dataIn[:,:,:,c]
+
+            # pre-smoothed
+            sigmaPre = self.sigmas[0]/2.0
+            preS = fastfilters.gaussianSmoothing(data, sigmaPre)
+
+            for sigma in self.sigmas:
+
+                neededScale = getScale(target=sigma, presmoothed=sigmaPre)
+
+                preS = fastfilters.gaussianSmoothing(preS, neededScale)
+                sigmaPre = sigma
+
+                allFeat.append(preS[:,:,:,None])
+                allFeat.append(fastfilters.laplacianOfGaussian(preS, neededScale)[:,:,:,None])
+                allFeat.append(fastfilters.gaussianGradientMagnitude(preS, neededScale)[:,:,:,None])
+                allFeat.append(fastfilters.gaussianGradientMagnitude(preS, neededScale)[:,:,:,None])
+                allFeat.append(fastfilters.hessianOfGaussianEigenvalues(preS, neededScale)[:,:,:,:])
+                allFeat.append(fastfilters.structureTensorEigenvalues(preS, neededScale, sigma*1.5)[:,:,:,:])
+            
+
+                
+        f =  numpy.concatenate(allFeat, axis=3)
+        assert f.ndim == 4
+        return f
+
 
 
 class BinaryMorphologyFeatures(FeatureExtractorBase):
-    def __init__(self, thresholds=(0.5, ),  radii=(1,2,4,6,8),#2,4,8,16),
+    def __init__(self, 
+        channel,
+        thresholds=(0.5, ),  
+        radii=(1,2,4,6,8),#2,4,8,16),
         useRadiiDilation=  (1,1,1,1,1),
         useRadiiErosion =  (1,1,0,0,0),
         useRadiiClosing =  (1,1,1,1,1),
         useRadiiOpening =  (1,1,0,0,0),
         postSmoothScale = None
     ):
+        self.channel = channel
         self.thresholds = thresholds
         self.radii = radii
-        self.halo = max(self.radii)
+        self.__halo = max(self.radii)
 
         self.useRadiiDilation= useRadiiDilation
         self.useRadiiErosion= useRadiiErosion
@@ -160,11 +173,12 @@ class BinaryMorphologyFeatures(FeatureExtractorBase):
 
         self.postSmoothScale = postSmoothScale
             
-    def halo():
-        return (self.halo,)*3
+    def halo(self):
+        return (self.__halo,)*3
 
-    def __call__(self, data):
+    def __call__(self, dataIn):
 
+        data = dataIn[:,:,:, self.channel]
         allFeat = []
 
         for t in self.thresholds:
@@ -207,8 +221,9 @@ class BinaryMorphologyFeatures(FeatureExtractorBase):
                 allFeat[i] = feat[:,:,:,None]
                 
         
-        return numpy.concatenate(allFeat, axis=3)
-
+        f =  numpy.concatenate(allFeat, axis=3)
+        assert f.ndim == 4
+        return f
 
 # registered features
 registerdFeatureOperators = {
