@@ -6,7 +6,10 @@ import traceback
 import numpy
 from concurrent.futures import ThreadPoolExecutor
 
+from threadpool import *
 
+def getSlicing(begin, end):
+    return [slice(b,e) for b,e in zip(begin,end)]
 
 def addHalo(shape, blockBegin, blockEnd, halo):
 
@@ -41,26 +44,30 @@ def addHalo(shape, blockBegin, blockEnd, halo):
 
 def forEachBlock(shape, blockShape, f, nWorker):
 
-    futures = []
-    with ThreadPoolExecutor(max_workers=nWorker) as executer:
-        for blockBegin, blockEnd in blockYielder((0,0,0), shape, blockShape):
-            if nWorker == 1:
-                f(blockBegin=blockBegin, blockEnd=blockEnd)
-            else:
-                future = executer.submit(f, blockBegin=blockBegin, blockEnd=blockEnd)
-                futures.append(future)
+    if nWorker == 1:
+        for blockIndex, blockBegin, blockEnd in blockYielder((0,0,0), shape, blockShape):
+            f(blockIndex=blockIndex, blockBegin=blockBegin, blockEnd=blockEnd)
+
+    else:
+
+        if False:
+            futures = []
+            with ThreadPoolExecutor(max_workers=2) as executer:
+                for blockIndex, blockBegin, blockEnd in blockYielder((0,0,0), shape, blockShape):
+                    executer.submit(f, blockIndex=blockIndex,blockBegin=blockBegin, blockEnd=blockEnd)
+
+            for future in futures:
+                e = future.exception()
+                if e is not None:
+                    raise e
 
 
-
-    for future in futures:
-        e = future.exception()
-        if e is not None:
-            raise e
-
-
-
-
-
+        if True:
+            pool = ThreadPool(nWorker)
+            for blockIndex, blockBegin, blockEnd in blockYielder((0,0,0), shape, blockShape):
+                pool.add_task(f, blockIndex=blockIndex,blockBegin=blockBegin, blockEnd=blockEnd)
+              
+            pool.wait_completion()
 
 
 
@@ -98,7 +105,7 @@ def reraise_with_stack(func):
 
 def blockYielder(begin, end, blockShape):
     
-
+    blockIndex = 0 
     for xBegin in range(begin[0], end[0], blockShape[0]):
         xEnd = min(xBegin + blockShape[0],end[0])
         for yBegin in range(begin[1], end[1], blockShape[1]):
@@ -106,8 +113,9 @@ def blockYielder(begin, end, blockShape):
             for zBegin in range(begin[2], end[2], blockShape[2]):
                 zEnd =  min(zBegin + blockShape[2],end[2])
 
-                yield (xBegin, yBegin, zBegin), (xEnd, yEnd, zEnd)
 
+                yield blockIndex, (xBegin, yBegin, zBegin), (xEnd, yEnd, zEnd)
+                blockIndex += 1
 
 
 
@@ -117,7 +125,8 @@ def labelsBoundingBox(labels, blockBegin, blockEnd):
 
     inBlockBegin = numpy.min(whereLabels,axis=1)
     inBlockEnd   = numpy.max(whereLabels,axis=1) +1
-    #print(inBlockBegin,inBlockEnd,inBlockEnd-inBlockBegin)
+    
+    subBlockShape = [e-b for e,b in zip(inBlockEnd, inBlockBegin)]
 
 
 
@@ -132,11 +141,10 @@ def labelsBoundingBox(labels, blockBegin, blockEnd):
     )
 
     globalBlockEnd = (
-        blockEnd[0] + inBlockBegin[0], 
-        blockEnd[1] + inBlockBegin[1],
-        blockEnd[2] + inBlockBegin[2]
+        blockBegin[0] + inBlockBegin[0]+subBlockShape[0], 
+        blockBegin[1] + inBlockBegin[1]+subBlockShape[1],
+        blockBegin[2] + inBlockBegin[2]+subBlockShape[2]
     )
-    #print("whereLabelsShape",whereLabels)
 
     whereLabels[0,:] -= inBlockBegin[0]
     whereLabels[1,:] -= inBlockBegin[1]

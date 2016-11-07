@@ -1,6 +1,7 @@
 from collections import OrderedDict
 import h5py
 from features import registerdFeatureOperators
+
 class Settings(object):
     def __init__(self, settingsDict, predictionSettingsDict=None):
 
@@ -15,7 +16,17 @@ class Settings(object):
         self.numberOfClasses = self.settingsDict["setup"]["nClasses"]
         self.predictionSettingsDict = predictionSettingsDict
 
+        print(self.settingsDict['setup'])
 
+        self.useBlockF = self.settingsDict['setup'].get("useBlock", None)
+        #self.useBlockF = self.settingsDict['setup']['useBlock']
+        assert self.useBlockF is not None
+
+    def useTrainingBlock(self, blockIndex, blockBegin, blockEnd):
+        if self.useBlockF is not None:
+            return self.useBlockF(blockIndex=blockIndex, blockBegin=blockBegin, blockEnd=blockBegin)
+        else:
+            return True
     def trainingInstancesNames(self):
 
         setup = self.settingsDict["setup"]

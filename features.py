@@ -2,7 +2,7 @@ import fastfilters
 import numpy
 import math
 import vigra
-from tools import addHalo
+from tools import addHalo, getSlicing
 
 
 
@@ -17,112 +17,70 @@ class FeatureExtractorBase(object):
         raise NotImplementedError("halo is not implemented")
 
 
+def extractChannels(data,usedChannels=(0,)):
+    
+    if data.ndim == 3:
+        d =data[:,:,:,None]
+    elif data.ndim == 4:
+        d = data
 
-class RawFeatureExtractorOld(FeatureExtractorBase):
+    d = d[:,:,:,usedChannels]
 
-    def __init__(self, sigmas=(1.0, 2.0, 4.0, 8.0)):
-        self.shape = None
-        assert isSorted(sigmas)
-        self.sigmas  = sigmas
-        maxSigma = max(sigmas)
-        maxOrder = 2
-        r = int(round(3.0*maxSigma + 0.5*maxOrder))
+    if d.ndim == 3:
+        d =d[:,:,:,None]
+    elif d.ndim == 4:
+        d = d
 
-        self.__halo = (r,)*3
-
-    def halo(self):
-        return self.__halo
-
-    def __call__(self, h5Dset, blockBegin,blockEnd, whereLabels = None):
-        
-        gBegin, gEnd ,lBegin, lEnd = addHalo(self.shape, blockBegin, blockEnd, self.halo())
-
-
-        blockShape1 = tuple([e-b for e,b in zip(lEnd, lBegin)])
-        blockShape2 = tuple([e-b for e,b in zip(blockEnd, blockBegin)])
-        
-
-
-        # fetch raw data
-        data = h5Dset[gBegin[0]:gEnd[0], gBegin[1]:gEnd[1], gBegin[2]:gEnd[2]].squeeze() 
-
-
-
-        allFeat = []
-        sigmas = (1.0, 2.0, 4.0, 8.0)
-
-
-        # pre-smoothed
-        sigmaPre = sigmas[0]/2.0
-        preS = fastfilters.gaussianSmoothing(data, sigmaPre)
-
-        for sigma in sigmas:
-
-            neededScale = getScale(target=sigma, presmoothed=sigmaPre)
-
-            preS = fastfilters.gaussianSmoothing(preS, neededScale)
-            sigmaPre = sigma
-
-            allFeat.append(preS[:,:,:,None])
-            allFeat.append(fastfilters.laplacianOfGaussian(data, neededScale)[:,:,:,None])
-            allFeat.append(fastfilters.gaussianGradientMagnitude(data, neededScale)[:,:,:,None])
-            allFeat.append(fastfilters.gaussianGradientMagnitude(data, neededScale)[:,:,:,None])
-            allFeat.append(fastfilters.hessianOfGaussianEigenvalues(data, neededScale)[:,:,:,:])
-            allFeat.append(fastfilters.structureTensorEigenvalues(data, neededScale, sigma*2.0)[:,:,:,:])
-        
-        
-        allFeat = numpy.concatenate(allFeat,axis=3)
-
-        if whereLabels is not None:
-
-            return allFeat[
-                whereLabels[0,:] + lBegin[0],
-                whereLabels[1,:] + lBegin[1],
-                whereLabels[2,:] + lBegin[2],
-                :
-            ]
-        else:
-            return allFeat[
-                lBegin[0]:lEnd[0], 
-                lBegin[1]:lEnd[1], 
-                lBegin[2]:lEnd[2],
-                :
-            ]
-
-
-
+    return d
 
 
 
 
 class ConvolutionFeatures(FeatureExtractorBase):
 
-    def __init__(self, sigmas=(1.0, 2.0, 4.0, 8.0)):
+    def __init__(self, 
+        sigmas = (1.0, 2.0, 4.0, 8.0),
+        usedChannels= (0,)
+    ):
         self.shape = None
         assert sorted(sigmas) == sigmas
         self.sigmas  = sigmas
+        self.usedChannels = usedChannels
         maxSigma = max(sigmas)
         maxOrder = 2
-        r = int(round(6.0*maxSigma*1.5 + 0.5*maxOrder))
+        r = int(round(3.0*maxSigma* + 0.5*2))
 
-        self.__halo = (r,)*3
+        # r of structure tensor
+        rD = int(round(3.0*maxSigma*0.3 + 0.5))
+        rG = int(round(3.0*maxSigma*0.7 ))
+        rSt = rD+rG
+
+        self.__halo = (max(r,rSt),)*3
 
     def halo(self):
         return self.__halo
 
-    def __call__(self, dataIn):
+    def numberOfFeatures(self):
+        nEvFeat = 2
+        nScalarFeat =  3
+        nChannels = len(self.usedChannels)
+        #print("nChannels",nChannels)
+        #print("nSigmas",len(self.sigmas))
+        return  len(self.sigmas) * (nEvFeat*3 + nScalarFeat) * nChannels
+
+
+    def __call__(self, dataIn, slicing, featureArray):
         
-        allFeat = []
+        fIndex = 0
         dataIn = numpy.require(dataIn,'float32').squeeze()
 
-        if dataIn.ndim == 3:
-            dataIn = dataIn[:,:,:,None]
+        dataWithChannel = extractChannels(dataIn, self.usedChannels)
 
+        slicingEv = slicing + [slice(0,3)]
 
+        for c in range(dataWithChannel.shape[3]):
 
-        for c in range(dataIn.shape[3]):
-
-            data = dataIn[:,:,:,c]
+            data = dataWithChannel[:,:,:,c]
 
             # pre-smoothed
             sigmaPre = self.sigmas[0]/2.0
@@ -131,22 +89,30 @@ class ConvolutionFeatures(FeatureExtractorBase):
             for sigma in self.sigmas:
 
                 neededScale = getScale(target=sigma, presmoothed=sigmaPre)
-
                 preS = fastfilters.gaussianSmoothing(preS, neededScale)
                 sigmaPre = sigma
 
-                allFeat.append(preS[:,:,:,None])
-                allFeat.append(fastfilters.laplacianOfGaussian(preS, neededScale)[:,:,:,None])
-                allFeat.append(fastfilters.gaussianGradientMagnitude(preS, neededScale)[:,:,:,None])
-                allFeat.append(fastfilters.gaussianGradientMagnitude(preS, neededScale)[:,:,:,None])
-                allFeat.append(fastfilters.hessianOfGaussianEigenvalues(preS, neededScale)[:,:,:,:])
-                allFeat.append(fastfilters.structureTensorEigenvalues(preS, neededScale, sigma*1.5)[:,:,:,:])
-            
+
+                featureArray[:,:,:,fIndex] = preS[slicing]
+                fIndex += 1
+
+                featureArray[:,:,:,fIndex] = fastfilters.laplacianOfGaussian(preS, neededScale)[slicing]
+                fIndex += 1
+
+                featureArray[:,:,:,fIndex] = fastfilters.gaussianGradientMagnitude(preS, neededScale)[slicing]
+                fIndex += 1
+
+
+                featureArray[:,:,:,fIndex:fIndex+3] = fastfilters.hessianOfGaussianEigenvalues(preS, neededScale)[slicingEv]
+                fIndex += 3
 
                 
-        f =  numpy.concatenate(allFeat, axis=3)
-        assert f.ndim == 4
-        return f
+                #print("array shape",featureArray[:,:,:,fIndex:fIndex+3].shape)
+                feat = fastfilters.structureTensorEigenvalues(preS, float(sigma)*0.3, float(sigma)*0.7)[slicingEv]
+                #print("feat  shape",feat.shape)
+                featureArray[:,:,:,fIndex:fIndex+3] = feat
+                fIndex += 3
+
 
 
 
@@ -176,10 +142,22 @@ class BinaryMorphologyFeatures(FeatureExtractorBase):
     def halo(self):
         return (self.__halo,)*3
 
-    def __call__(self, dataIn):
+    def numberOfFeatures(self):
+        nRadi = len(self.radii)
+        perRadius = sum(self.useRadiiDilation)
+        perRadius += sum(self.useRadiiErosion)
+        perRadius += sum(self.useRadiiClosing)
+        perRadius += sum(self.useRadiiOpening)
+
+        return nRadi * perRadius
+
+    def __call__(self, dataIn, slicing, featureArray):
 
         data = dataIn[:,:,:, self.channel]
         allFeat = []
+
+        fIndex = 0 
+
 
         for t in self.thresholds:
 
@@ -193,37 +171,34 @@ class BinaryMorphologyFeatures(FeatureExtractorBase):
             for ir, r in enumerate(self.radii):
 
                 if self.useRadiiDilation[ir]:
-                    dilation = vigra.filters.multiBinaryDilation(binary, r)
-                    allFeat.append(dilation[:,:,:,None])
+                    dilation = vigra.filters.multiBinaryDilation(binary, r).squeeze()
+                    featureArray[:,:,:, fIndex] = dilation[slicing]
+                    fIndex += 1
+                    
 
                 if self.useRadiiErosion[ir]:
-                    erosion  = vigra.filters.multiBinaryErosion(binary, r)
-                    allFeat.append(erosion[:,:,:,None])
+                    erosion  = vigra.filters.multiBinaryErosion(binary, r).squeeze()
+                    featureArray[:,:,:, fIndex] = erosion[slicing]
+                    fIndex += 1
 
                 if self.useRadiiClosing[ir]:
                     if dilation is not None:
-                        closing  = vigra.filters.multiBinaryErosion(dilation, r)
+                        closing  = vigra.filters.multiBinaryErosion(dilation, r).squeeze()
                     else:
-                        closing  = vigra.filters.multiBinaryClosing(binary, r)
-                    allFeat.append(closing[:,:,:,None])
+                        closing  = vigra.filters.multiBinaryClosing(binary, r).squeeze()
+                    featureArray[:,:,:, fIndex] = closing[slicing]
+                    fIndex += 1
 
                 if self.useRadiiOpening[ir]:
                     if erosion is not None:
-                        opening  = vigra.filters.multiBinaryDilation(erosion, r)
+                        opening  = vigra.filters.multiBinaryDilation(erosion, r).squeeze()
                     else:
-                        opening  = vigra.filters.multiBinaryOpening(binary, r)
-                    allFeat.append(opening[:,:,:,None])
+                        opening  = vigra.filters.multiBinaryOpening(binary, r).squeeze()
+
+                    featureArray[:,:,:, fIndex] = opening[slicing]
+                    fIndex += 1
 
         
-        if self.postSmoothScale is not None:
-            for i,feat in enumerate(allFeat):
-                feat = fastfilters.gaussianSmoothing(feat.squeeze().astype('float32'), self.postSmoothScale)
-                allFeat[i] = feat[:,:,:,None]
-                
-        
-        f =  numpy.concatenate(allFeat, axis=3)
-        assert f.ndim == 4
-        return f
 
 # registered features
 registerdFeatureOperators = {
