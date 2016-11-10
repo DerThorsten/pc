@@ -113,6 +113,8 @@ class ConvolutionFeatures(FeatureExtractorBase):
                 featureArray[:,:,:,fIndex:fIndex+3] = feat
                 fIndex += 3
 
+        assert fIndex == self.numberOfFeatures()
+
 
 
 
@@ -143,17 +145,20 @@ class BinaryMorphologyFeatures(FeatureExtractorBase):
         return (self.__halo,)*3
 
     def numberOfFeatures(self):
-        nRadi = len(self.radii)
         perRadius = sum(self.useRadiiDilation)
         perRadius += sum(self.useRadiiErosion)
         perRadius += sum(self.useRadiiClosing)
         perRadius += sum(self.useRadiiOpening)
 
-        return nRadi * perRadius
+        return  perRadius*len(self.thresholds)
 
     def __call__(self, dataIn, slicing, featureArray):
 
-        data = dataIn[:,:,:, self.channel]
+        if dataIn.ndim == 4:
+            data = dataIn[:,:,:, self.channel]
+        else:
+            data = dataIn
+
         allFeat = []
 
         fIndex = 0 
@@ -197,6 +202,7 @@ class BinaryMorphologyFeatures(FeatureExtractorBase):
 
                     featureArray[:,:,:, fIndex] = opening[slicing]
                     fIndex += 1
+        assert fIndex == self.numberOfFeatures()
 
         
 
@@ -210,4 +216,37 @@ registerdFeatureOperators = {
 
 
 if __name__ == "__main__":
-    pass
+    import pylab
+    import h5py
+
+    f = "/home/tbeier/src/pc/data/hhess_supersmall/raw_predictions.h5"
+
+    dset = h5py.File("/home/tbeier/src/pc/data/hhess_supersmall/raw_predictions.h5",'r')['data']
+    data = dset[0:200,0:200,:,0].squeeze()
+
+
+
+    fOp = BinaryMorphologyFeatures(channel=0,thresholds=[128.0])
+
+    slicing = [slice(0,s) for s in data.shape]
+    outShape = data.shape + (fOp.numberOfFeatures(),)
+
+    fArray = numpy.zeros(outShape)
+
+    fOp(data, slicing, fArray)
+
+    for x in range(fArray.shape[3]):
+        print(x)
+        p = int(fArray.shape[2]/2)
+        fImg = fArray[:,:,p,x]
+
+        print(data.shape)
+        rImg = data[:,:,p]
+
+        f = pylab.figure()
+        f.add_subplot(2, 1, 1)
+        pylab.imshow(fImg,cmap='gray')
+        f.add_subplot(2, 1, 2)
+        pylab.imshow(rImg,cmap='gray')
+
+        pylab.show()

@@ -5,7 +5,7 @@ from __future__ import division
 
 def useBlock(blockIndex, blockBegin, blockEnd):
     #print("bi",blockIndex)
-    return (blockIndex + 1) % 2 != 0
+    return True#(blockIndex + 1) % 2 != 0
 
 
 settingsDict = {
@@ -15,13 +15,13 @@ settingsDict = {
             "data":{
                 "raw" : {
                     "file" : [
-                        "/home/tbeier/src/pc/data/hhess_supersmall/raw.h5",
-                        "dataa"
+                        "/home/tbeier/raw_sub.h5",
+                        "data"
                     ]
                 },
                 "pmap" : {
                     "file" : [
-                        "/home/tbeier/src/pc/data/hhess_supersmall/raw_predictions.h5",
+                        "/media/tbeier/4cf81285-be72-45f5-8c63-fb8e9ff4476c/pc_out/2nm/prediction_semantic_full.h5",
                         "data"
                     ]
                 }
@@ -30,7 +30,7 @@ settingsDict = {
             "labels" : {
 
                 "file" : [
-                    "/home/tbeier/src/pc/data/hhess_supersmall/explicit_semantic_labels.h5",
+                    "/home/tbeier/src/pc/data/hhess_full_2nm/labels_semantic_r2.h5",
                     "data"
                 ]
             }
@@ -39,8 +39,8 @@ settingsDict = {
 
     "setup" : {   
         "useBlock" : useBlock,
-        "blockShape" : [50,50,50],
-        "nClasses" : 7,
+        "blockShape" : [60,60,60],
+        "nClasses" : 3,
         "trainingDataNames": [
             "hhess"
         ],
@@ -62,17 +62,17 @@ settingsDict = {
                     {
                         "type" : "ConvolutionFeatures",
                         "kwargs" : {
-                            "sigmas" : [2.0, 4.0, 8.0, 12],
-                            "usedChannels" : [0, 1, 2, 3, 4, 5, 6]
+                            "sigmas" : [1.0, 2.0, 4.0, 8.0, 12],
+                            "usedChannels" : [0, 1, 2, 3 ,4 ,5,6]
                         }
                     },
-                    {
-                        "type" : "BinaryMorphologyFeatures",
-                        "kwargs" : {
-                            "channel" : 0,
-                            "thresholds":[128.0]
-                        }
-                    },
+                    #{
+                    #    "type" : "BinaryMorphologyFeatures",
+                    #    "kwargs" : {
+                    #        "channel" : 0,
+                    #        "thresholds":[128.0]
+                    #    }
+                    #},
                     #{
                     #    "type" : "BinaryMorphologyFeatures",
                     #    "kwargs" : {
@@ -113,8 +113,8 @@ settingsDict = {
         ] 
         ,
         "classifier" :{
-            "training_set": "/home/tbeier/src/pc/data/hhess_supersmall/training_set_r2.h5",
-            "filename":"/home/tbeier/src/pc/data/hhess_supersmall/clfr2.clf",
+            "training_set": "/home/tbeier/src/pc/data/hhess_full_2nm/training_set_r2.h5",
+            "filename":"/home/tbeier/src/pc/data/hhess_full_2nm/clfr2.clf",
 
             "type" : "rf",
             "settings" : {

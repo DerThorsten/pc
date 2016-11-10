@@ -1,7 +1,10 @@
 import xgboost as xgb
 import multiprocessing
+from sklearn.ensemble import RandomForestClassifier
 
-class Classifier(object):
+import cPickle
+
+class XGBClassifier(object):
     def __init__(self, nClasses, nRounds=200, maxDepth=3, nThreads=multiprocessing.cpu_count(), silent=1):
         self.param = {
             'bst:max_depth':maxDepth, 
@@ -53,6 +56,9 @@ class Classifier(object):
 
             return e
 
+    def needsLockedPrediction(self):
+        return True
+
 
 
     def save(self, fname):
@@ -70,3 +76,46 @@ class Classifier(object):
     def predict(self, X):
         dtest = xgb.DMatrix(X)
         return self.bst.predict(dtest)
+
+
+
+
+
+class RfClassifier():
+    def __init__(self,**kwargs):
+        self.params = kwargs
+        self.clf  = None
+
+
+
+
+    def train(self, X, Y):
+        if self.clf is None:
+            self.clf = RandomForestClassifier(**self.params)
+
+        self.clf.fit(X,Y)
+
+
+    def save(self, fname):
+        assert  self.clf is not None
+        with open(fname, 'wb') as fid:
+            cPickle.dump(self.clf, fid)    
+
+    def load(self, fname, nThreads=None):
+        with open(fname, 'rb') as fid:
+            self.clf = cPickle.load(fid)
+
+        if nThreads is not None:
+            self.params['n_jobs'] = nThreads
+
+        self.clf.set_params(**self.params)
+            
+
+
+    def predict(self, X):
+        assert self.clf is not None
+        return self.clf.predict_proba(X)
+
+
+    def needsLockedPrediction(self):
+        return False

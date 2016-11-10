@@ -15,8 +15,8 @@ settingsDict = {
             "data":{
                 "raw" : {
                     "file" : [
-                        "/home/tbeier/src/pc/data/hhess_supersmall/raw.h5",
-                        "dataa"
+                        "/media/tbeier/4cf81285-be72-45f5-8c63-fb8e9ff4476c/datasets/hhess_2nm/data_normalized.h5",
+                        "data"
                     ]
                 }
             }
@@ -24,8 +24,8 @@ settingsDict = {
             "labels" : {
 
                 "file" : [
-                    "/home/tbeier/src/pc/data/hhess_supersmall/explicit_semantic_labels.h5",
-                    "data"
+                    "/home/tbeier/src/pc/data/hhess_full_2nm/labels_semantic.h5",
+                    "exported_data"
                 ]
             }
         }   
@@ -33,7 +33,7 @@ settingsDict = {
 
     "setup" : {   
         "useBlock" : useBlock,
-        "blockShape" : [50,50,50],
+        "blockShape" : [150,150,150],
         "nClasses" : 7,
         "trainingDataNames": [
             "hhess"
@@ -53,8 +53,8 @@ settingsDict = {
         ] 
         ,
         "classifier" :{
-            "training_set": "/home/tbeier/src/pc/data/hhess_supersmall/training_set_r1.h5",
-            "filename":"/home/tbeier/src/pc/data/hhess_supersmall/clf.clf",
+            "training_set": "/home/tbeier/src/pc/data/hhess_full_2nm/training_set_r1.h5",
+            "filename":"/home/tbeier/src/pc/data/hhess_full_2nm/clf.clf",
             "type" : "rf",
             "settings" : {
                 "n_jobs":-1, 

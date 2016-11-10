@@ -5,23 +5,22 @@ predictionSettingsDict = {
             "data":{
                 "raw" : {
                     "file" : [
-                        "/home/tbeier/src/pc/data/hhess_supersmall/raw.h5",
-                        "dataa"
+                        "/home/tbeier/raw_sub.h5",
+                        "data"
                     ]
                 },
                 "pmap" : {
                     "file" : [
-                        "/home/tbeier/src/pc/data/hhess_supersmall/raw_predictions.h5",
+                        "/media/tbeier/4cf81285-be72-45f5-8c63-fb8e9ff4476c/pc_out/2nm/prediction_semantic_full.h5",
                         "data"
                     ]
                 }
             },
             "prediction" :{
                 "file" : [
-                    "/home/tbeier/src/pc/data/hhess_supersmall/pred_r2.h5",
+                    "/media/tbeier/4cf81285-be72-45f5-8c63-fb8e9ff4476c/pc_out/2nm/prediction_semantic_r2_full.h5",
                     "data"
                 ],
-                "roi": [[0,0,0], [500,500,50]],
                 # must be either 'float32','float64', or 'uint8'
                 "dtype" : "uint8"
             }

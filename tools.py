@@ -7,6 +7,36 @@ import numpy
 from concurrent.futures import ThreadPoolExecutor
 
 from threadpool import *
+import time
+import pylab
+import vigra
+import os
+import colorama 
+from colorama import Fore, Back, Style
+colorama.init()
+
+
+class Timer:
+    def __init__(self, name, verbose=True):
+        self.name = name
+        self.verbose = verbose
+
+    def __enter__(self):
+        if self.verbose:
+
+            print(Back.GREEN+Fore.RED+self.name+"..."+Style.RESET_ALL) 
+        self.start = time.time()
+        return self
+
+    def __exit__(self, *args):
+        self.end = time.time()
+        self.interval = self.end - self.start
+        if self.verbose  :
+            print(Back.GREEN+Fore.RED+self.name+"... took "+Style.RESET_ALL+str(self.interval)+"sec") 
+
+
+
+
 
 def getSlicing(begin, end):
     return [slice(b,e) for b,e in zip(begin,end)]
@@ -42,18 +72,23 @@ def addHalo(shape, blockBegin, blockEnd, halo):
 
 
 
-def forEachBlock(shape, blockShape, f, nWorker):
+def forEachBlock(shape, blockShape, f, nWorker, roiBegin=None, roiEnd=None):
+    if roiBegin is None:
+        roiBegin = (0,0,0)
+
+    if roiEnd is None:
+        roiEnd = shape
 
     if nWorker == 1:
-        for blockIndex, blockBegin, blockEnd in blockYielder((0,0,0), shape, blockShape):
+        for blockIndex, blockBegin, blockEnd in blockYielder(roiBegin, roiEnd, blockShape):
             f(blockIndex=blockIndex, blockBegin=blockBegin, blockEnd=blockEnd)
 
     else:
 
         if False:
             futures = []
-            with ThreadPoolExecutor(max_workers=2) as executer:
-                for blockIndex, blockBegin, blockEnd in blockYielder((0,0,0), shape, blockShape):
+            with ThreadPoolExecutor(max_workers=nWorker) as executer:
+                for blockIndex, blockBegin, blockEnd in blockYielder(roiBegin, roiEnd, blockShape):
                     executer.submit(f, blockIndex=blockIndex,blockBegin=blockBegin, blockEnd=blockEnd)
 
             for future in futures:
@@ -64,7 +99,7 @@ def forEachBlock(shape, blockShape, f, nWorker):
 
         if True:
             pool = ThreadPool(nWorker)
-            for blockIndex, blockBegin, blockEnd in blockYielder((0,0,0), shape, blockShape):
+            for blockIndex, blockBegin, blockEnd in blockYielder(roiBegin, roiEnd, blockShape):
                 pool.add_task(f, blockIndex=blockIndex,blockBegin=blockBegin, blockEnd=blockEnd)
               
             pool.wait_completion()
@@ -81,6 +116,8 @@ def getShape(dataH5Dsets, labelsH5Dset=None):
     for inputFileName in dataH5Dsets.keys():
         fshape = tuple(dataH5Dsets[inputFileName].shape[0:3])
         if shape is not None:
+            if(shape != fshape):
+                raise RuntimeError("%s !- %s"%(str(shape),str(fshape)))
             assert shape == fshape
         else:
             shape = fshape
